@@ -46,8 +46,9 @@ def password_meter(password):
 
     if check_common_substring(password):
         suggestion.append("Avoid common substrings")
-        
     
+    if check_for_year(password):
+        suggestion.append("Avoid using years in your password")
 
     print(f"Your password has {entropy:.3f} bits of entropy, your rating is: {rating}. Suggestions: {suggestion}")
 
@@ -105,6 +106,12 @@ def check_common_substring(password):
         if sequence in password_lower:
             return True, sequence # Sequence found
             
+    return False
+
+def check_for_year(password):
+    for year in range(1900, 2100):
+        if str(year) in password:
+            return True
     return False
 
 def main():
