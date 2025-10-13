@@ -4,7 +4,7 @@ import re
 from Crypto.Protocol.KDF import PBKDF2
 from Crypto.Hash import SHA256
 from Crypto.Random import get_random_bytes
-import base64
+from rbloom import Bloom
 import math
 import argparse
 
@@ -84,6 +84,20 @@ def create_parser():
         required=True,
         help="Path to the dictionary file (e.g., data/small_dict.txt).",
     )
+
+    # Check bloom filter
+    parser_check_bloom = subparser.add_parser(
+        "check-bloom", help="Checks if a password is in a bloom filter."
+    )
+    parser_check_bloom.add_argument(
+        "--bloom",
+        required=True,
+        help="Path to the bloom filter file (e.g., data/bloom.bin).",
+    )
+    parser_check_bloom.add_argument(
+        "--password", "-p", required=True, help="Password to check."
+    )
+
 
     return parser
 
@@ -223,8 +237,6 @@ def create_user(username, password, iterations=10**7):
     return user_data
 
 
-
-
 def save_user(user_data, filename):
     data = {}
     if os.path.exists(filename):
@@ -247,6 +259,34 @@ def save_user(user_data, filename):
     return user_data
 
 
+def build_bloom(blacklist_file, out_file):
+    bloom_filter = Bloom(100_000, 0.01, hash_func=hash_func) # 100,000 items expected, false positive rate of 0.01
+    with open(blacklist_file, "r") as f:
+        for line in f:
+            line = line.strip()
+            bloom_filter.add(line)
+
+    bloom_filter.save(out_file)
+
+    print(f"Bloom filter saved to {out_file}")
+    
+    return bloom_filter
+
+def hash_func(password):
+    h = SHA256.new()
+    h.update(password.encode("utf-8"))
+    return int.from_bytes(h.digest()[:16], "big", signed=True)
+
+def check_bloom(bloom_file, password):
+    bloom_filter = Bloom.load(bloom_file, hash_func=hash_func)
+    if password in bloom_filter:
+        print(f"Password '{password}' is in the bloom filter.")
+    else:
+        print(f"Password '{password}' is not in the bloom filter.")
+    return password in bloom_filter
+
+
+
 def main():
     parser = create_parser()
     args = parser.parse_args()
@@ -256,6 +296,11 @@ def main():
         password_meter(args.password)
     elif args.command == "create-user":
         create_user(args.username, args.password)
+    elif args.command == "build-bloom":
+        build_bloom(args.blacklist, args.out)
+    elif args.command == "check-bloom":
+        check_bloom(args.bloom, args.password)
+
 
 
 if __name__ == "__main__":
