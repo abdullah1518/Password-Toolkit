@@ -7,6 +7,7 @@ from Crypto.Random import get_random_bytes
 from rbloom import Bloom
 import math
 import argparse
+import time
 
 
 def create_parser():
@@ -97,7 +98,6 @@ def create_parser():
     parser_check_bloom.add_argument(
         "--password", "-p", required=True, help="Password to check."
     )
-
 
     return parser
 
@@ -230,7 +230,7 @@ def create_user(username, password, iterations=10**7):
         "username": username,
         "pwd_salt_hex": salt.hex(),
         "pwd_hash_hex": key.hex(),
-        "pwd_iterations" : iterations
+        "pwd_iterations": iterations,
     }
 
     save_user(user_data, "data/sample_users.json")
@@ -260,7 +260,12 @@ def save_user(user_data, filename):
 
 
 def build_bloom(blacklist_file, out_file):
-    bloom_filter = Bloom(100_000, 0.01, hash_func=hash_func) # 100,000 items expected, false positive rate of 0.01
+    if not os.path.exists(blacklist_file):
+        print(f"Blacklist file not found: {blacklist_file}")
+        return
+    bloom_filter = Bloom(
+        100_000, 0.01, hash_func=hash_func
+    )  # 100,000 items expected, false positive rate of 0.01
     with open(blacklist_file, "r") as f:
         for line in f:
             line = line.strip()
@@ -269,15 +274,20 @@ def build_bloom(blacklist_file, out_file):
     bloom_filter.save(out_file)
 
     print(f"Bloom filter saved to {out_file}")
-    
+
     return bloom_filter
+
 
 def hash_func(password):
     h = SHA256.new()
     h.update(password.encode("utf-8"))
     return int.from_bytes(h.digest()[:16], "big", signed=True)
 
+
 def check_bloom(bloom_file, password):
+    if not os.path.exists(bloom_file):
+        print(f"Bloom filter file not found: {bloom_file}")
+        return
     bloom_filter = Bloom.load(bloom_file, hash_func=hash_func)
     if password in bloom_filter:
         print(f"Password '{password}' is in the bloom filter.")
@@ -285,6 +295,89 @@ def check_bloom(bloom_file, password):
         print(f"Password '{password}' is not in the bloom filter.")
     return password in bloom_filter
 
+
+def simulate_crack(dictionary_file, users_file="data/sample_users.json"):
+    if not os.path.exists(users_file):
+        print(f"Users file not found: {users_file}")
+        return
+
+    with open(users_file, "r") as f:
+        try:
+            users = json.load(f)
+        except json.JSONDecodeError:
+            print(f"Users file is empty or corrupt: {users_file}")
+            return
+
+    if not isinstance(users, dict) or not users:
+        print("No users to test.")
+        return
+
+    if not os.path.exists(dictionary_file):
+        print(f"Dictionary file not found: {dictionary_file}")
+        return
+
+    start_time = time.time()
+    cracked = {}
+    attempted = 0
+
+    with open(dictionary_file, "r", encoding="utf-8", errors="ignore") as dict_f:
+        candidates = [line.strip() for line in dict_f if line.strip()]
+
+    total_users = len(users)
+    print(f"Loaded {len(candidates)} candidates for {total_users} user(s).", flush=True)
+
+    for idx, (username, data) in enumerate(users.items(), start=1):
+        print(f"[{idx}/{total_users}] Cracking user '{username}'...", flush=True)
+        salt_hex = data.get("pwd_salt_hex")
+        hash_hex = data.get("pwd_hash_hex")
+        iterations = data.get("pwd_iterations")
+
+        if not salt_hex or not hash_hex or not iterations:
+            continue
+
+        salt = bytes.fromhex(salt_hex)
+        target = hash_hex.lower()
+
+        found = None
+        for candidate in candidates:
+            attempted += 1
+            key = PBKDF2(
+                candidate,
+                salt,
+                dkLen=32,
+                count=int(iterations),
+                hmac_hash_module=SHA256,
+            )
+            if key.hex().lower() == target:
+                found = candidate
+                break
+            if attempted % 50000 == 0:
+                elapsed_partial = time.time() - start_time
+                print(
+                    f"Progress: attempted {attempted} hashes in {elapsed_partial:.1f}s...",
+                    flush=True,
+                )
+
+        cracked[username] = found
+        if found is None:
+            print(f"[{idx}/{total_users}] User '{username}' not cracked.", flush=True)
+        else:
+            print(f"[{idx}/{total_users}] User '{username}' cracked.", flush=True)
+
+    elapsed = time.time() - start_time
+    num_cracked = sum(1 for v in cracked.values() if v is not None)
+
+    print(
+        f"Tried {attempted} candidate hashes across {total_users} users in {elapsed:.2f}s."
+    )
+    print(f"Cracked {num_cracked}/{total_users} users.")
+    for user, pwd in cracked.items():
+        if pwd is None:
+            print(f"{user}: NOT CRACKED")
+        else:
+            print(f"{user}: '{pwd}'")
+
+    return cracked
 
 
 def main():
@@ -300,7 +393,8 @@ def main():
         build_bloom(args.blacklist, args.out)
     elif args.command == "check-bloom":
         check_bloom(args.bloom, args.password)
-
+    elif args.command == "simulate-crack":
+        simulate_crack(args.dict)
 
 
 if __name__ == "__main__":
