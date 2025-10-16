@@ -14,6 +14,7 @@ A command-line utility for various password-related security tasks, including st
 
 *   Python 3.x
 *   `pycryptodome`
+*   `rbloom`
 
 You can install the required library using pip:
 ```bash
