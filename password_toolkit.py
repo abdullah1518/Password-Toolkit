@@ -4,6 +4,7 @@ import re
 from Crypto.Protocol.KDF import PBKDF2
 from Crypto.Hash import SHA256
 from Crypto.Random import get_random_bytes
+from Crypto.Cipher import AES
 from rbloom import Bloom
 import math
 import argparse
@@ -221,7 +222,7 @@ def check_for_year(password):
     return False
 
 
-def create_user(username, password, iterations=10**7):
+def create_user(username, password, iterations=600_000):
     print(f"Creating user: {username}")
     salt = get_random_bytes(16)
     key = PBKDF2(password, salt, dkLen=32, count=iterations, hmac_hash_module=SHA256)
@@ -297,6 +298,7 @@ def check_bloom(bloom_file, password):
 
 
 def simulate_crack(dictionary_file, users_file="data/sample_users.json"):
+    # Checking files exist
     if not os.path.exists(users_file):
         print(f"Users file not found: {users_file}")
         return
@@ -323,23 +325,26 @@ def simulate_crack(dictionary_file, users_file="data/sample_users.json"):
     with open(dictionary_file, "r", encoding="utf-8", errors="ignore") as dict_f:
         candidates = [line.strip() for line in dict_f if line.strip()]
 
+    # Checking number of users and candidates
     total_users = len(users)
     print(f"Loaded {len(candidates)} candidates for {total_users} user(s).", flush=True)
 
-    for idx, (username, data) in enumerate(users.items(), start=1):
+    # Cracking users
+    for idx, (username, data) in enumerate(users.items(), start=1): 
         print(f"[{idx}/{total_users}] Cracking user '{username}'...", flush=True)
+        # Getting user data
         salt_hex = data.get("pwd_salt_hex")
         hash_hex = data.get("pwd_hash_hex")
         iterations = data.get("pwd_iterations")
-
+    
         if not salt_hex or not hash_hex or not iterations:
-            continue
+            continue # If user data is not complete, skip
 
-        salt = bytes.fromhex(salt_hex)
-        target = hash_hex.lower()
+        salt = bytes.fromhex(salt_hex) # Converting salt from hex to bytes
+        target = hash_hex.lower() # Converting hash from hex to lowercase
 
         found = None
-        for candidate in candidates:
+        for candidate in candidates: # Trying each candidate hash
             attempted += 1
             key = PBKDF2(
                 candidate,
@@ -351,7 +356,7 @@ def simulate_crack(dictionary_file, users_file="data/sample_users.json"):
             if key.hex().lower() == target:
                 found = candidate
                 break
-            if attempted % 50000 == 0:
+            if attempted % 50000 == 0: # Printing progress every 50,000 attempts
                 elapsed_partial = time.time() - start_time
                 print(
                     f"Progress: attempted {attempted} hashes in {elapsed_partial:.1f}s...",
@@ -359,19 +364,20 @@ def simulate_crack(dictionary_file, users_file="data/sample_users.json"):
                 )
 
         cracked[username] = found
-        if found is None:
+        if found is None: # If user is not cracked
             print(f"[{idx}/{total_users}] User '{username}' not cracked.", flush=True)
         else:
-            print(f"[{idx}/{total_users}] User '{username}' cracked.", flush=True)
+            print(f"[{idx}/{total_users}] User '{username}' cracked.", flush=True) # If user is cracked
 
     elapsed = time.time() - start_time
     num_cracked = sum(1 for v in cracked.values() if v is not None)
 
+    # Printing results
     print(
         f"Tried {attempted} candidate hashes across {total_users} users in {elapsed:.2f}s."
     )
     print(f"Cracked {num_cracked}/{total_users} users.")
-    for user, pwd in cracked.items():
+    for user, pwd in cracked.items(): # Printing cracked users
         if pwd is None:
             print(f"{user}: NOT CRACKED")
         else:
@@ -379,9 +385,80 @@ def simulate_crack(dictionary_file, users_file="data/sample_users.json"):
 
     return cracked
 
+def encrypt_file(username, password, infile, outfile):
+    print(f"Encrypting file: {infile}")
+    print(f"Output file: {outfile}")
 
+    # Derive encryption key from password using PBKDF2-HMAC-SHA256
+    salt = get_random_bytes(16)  # 128-bit salt
+    key = PBKDF2(password, salt, dkLen=32, count=10**7, hmac_hash_module=SHA256) # 32 bytes = 256 bits
+
+    # AES-GCM with a 96-bit nonce
+    nonce = get_random_bytes(12) # 12 bytes = 96 bits
+    cipher = AES.new(key, AES.MODE_GCM, nonce=nonce)
+
+    # Use the username as AAD
+    aad = username.encode("utf-8")
+    cipher.update(aad)
+
+    with open(infile, "rb") as f:
+        plaintext = f.read()
+
+    ciphertext = cipher.encrypt(plaintext)
+    tag = cipher.digest() # Get the tag from the cipher
+
+    # File format: b"AES-GCM" | salt(16) | nonce(12) | tag(16) | ciphertext
+    with open(outfile, "wb") as f:
+        f.write(b"AES-GCM")
+        f.write(salt)
+        f.write(nonce)
+        f.write(tag)
+        f.write(ciphertext)
+
+    return
+
+def decrypt_file(username, password, infile, outfile):
+    print(f"Decrypting file: {infile}")
+    print(f"Output file: {outfile}")
+
+    with open(infile, "rb") as f:
+        raw_data = f.read()
+
+    if len(raw_data) < 7 + 16 + 12 + 16:
+        print("Ciphertext too short or corrupt.")
+        return
+
+    header = raw_data[0:7]
+    if header != b"AES-GCM":
+        print("Unsupported or corrupt file format.")
+        return
+
+    salt = raw_data[7:23]
+    nonce = raw_data[23:35]
+    tag = raw_data[35:51]
+    ciphertext = raw_data[51:]
+
+    # Derive key
+    key = PBKDF2(password, salt, dkLen=32, count=10**7, hmac_hash_module=SHA256)
+
+    cipher = AES.new(key, AES.MODE_GCM, nonce=nonce)
+
+    # Re apply the AAD (username)
+    aad = username.encode("utf-8")
+    cipher.update(aad)
+
+    try:
+        plaintext = cipher.decrypt_and_verify(ciphertext, tag)
+    except ValueError:
+        print("Authentication failed. Wrong password, username (AAD), or corrupted data.")
+        return
+
+    with open(outfile, "wb") as f:
+        f.write(plaintext)
+
+    return
 def main():
-    parser = create_parser()
+    parser = create_parser()   
     args = parser.parse_args()
 
     if args.command == "check-password":
@@ -395,6 +472,10 @@ def main():
         check_bloom(args.bloom, args.password)
     elif args.command == "simulate-crack":
         simulate_crack(args.dict)
+    elif args.command == "encrypt-file":
+        encrypt_file(args.username, args.password, args.infile, args.outfile)
+    elif args.command == "decrypt-file":
+        decrypt_file(args.username, args.password, args.infile, args.outfile)
 
 
 if __name__ == "__main__":

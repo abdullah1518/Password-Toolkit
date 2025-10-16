@@ -1,6 +1,6 @@
 # Password Toolkit
 
-A command-line utility for various password-related security tasks, including strength checking, secure storage, and file encryption.
+A command line utility for various password related security tasks, including strength checking, secure storage, file encryption, and password cracking.
 
 ## Features
 
@@ -16,10 +16,13 @@ A command-line utility for various password-related security tasks, including st
 *   `pycryptodome`
 *   `rbloom`
 
-You can install the required library using pip:
+You can install the required libraries using pip:
 ```bash
-pip install pycryptodome
+pip install -r requirements.txt
 ```
-```bash
-pip install rbloom
-```
+## Password Lists used
+
+
+National Cyber Security Centre UK 100k most used passwords: https://gitlab.com/kalilinux/packages/seclists/-/blob/c762d09c287bfde4ba326d450b21796980e95781/Passwords/Common-Credentials/100k-most-used-passwords-NCSC.txt
+
+Weakpass 4 from weakpass.com: https://weakpass.com/download/2012/weakpass_4.txt.7z
