@@ -20,3 +20,6 @@ You can install the required library using pip:
 ```bash
 pip install pycryptodome
 ```
+```bash
+pip install rbloom
+```
