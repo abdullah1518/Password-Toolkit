@@ -100,6 +100,22 @@ def create_parser():
         "--password", "-p", required=True, help="Password to check."
     )
 
+    # Verify user
+    parser_verify_user = subparser.add_parser("verify-user", help="Verifies a user.")
+    parser_verify_user.add_argument(
+        "--username", "-u", required=True, help="Username to verify."
+    )
+    parser_verify_user.add_argument(
+        "--password", "-p", required=True, help="Password to verify."
+    )
+    parser_verify_user.add_argument(
+        "--users-file",
+        "-f",
+        required=False,
+        default="data/sample_users.json",
+        help="Path to the users file (e.g., data/sample_users.json).",
+    )
+
     return parser
 
 
@@ -330,21 +346,21 @@ def simulate_crack(dictionary_file, users_file="data/sample_users.json"):
     print(f"Loaded {len(candidates)} candidates for {total_users} user(s).", flush=True)
 
     # Cracking users
-    for idx, (username, data) in enumerate(users.items(), start=1): 
+    for idx, (username, data) in enumerate(users.items(), start=1):
         print(f"[{idx}/{total_users}] Cracking user '{username}'...", flush=True)
         # Getting user data
         salt_hex = data.get("pwd_salt_hex")
         hash_hex = data.get("pwd_hash_hex")
         iterations = data.get("pwd_iterations")
-    
-        if not salt_hex or not hash_hex or not iterations:
-            continue # If user data is not complete, skip
 
-        salt = bytes.fromhex(salt_hex) # Converting salt from hex to bytes
-        target = hash_hex.lower() # Converting hash from hex to lowercase
+        if not salt_hex or not hash_hex or not iterations:
+            continue  # If user data is not complete, skip
+
+        salt = bytes.fromhex(salt_hex)  # Converting salt from hex to bytes
+        target = hash_hex.lower()  # Converting hash from hex to lowercase
 
         found = None
-        for candidate in candidates: # Trying each candidate hash
+        for candidate in candidates:  # Trying each candidate hash
             attempted += 1
             key = PBKDF2(
                 candidate,
@@ -356,7 +372,7 @@ def simulate_crack(dictionary_file, users_file="data/sample_users.json"):
             if key.hex().lower() == target:
                 found = candidate
                 break
-            if attempted % 50000 == 0: # Printing progress every 50,000 attempts
+            if attempted % 50000 == 0:  # Printing progress every 50,000 attempts
                 elapsed_partial = time.time() - start_time
                 print(
                     f"Progress: attempted {attempted} hashes in {elapsed_partial:.1f}s...",
@@ -364,10 +380,12 @@ def simulate_crack(dictionary_file, users_file="data/sample_users.json"):
                 )
 
         cracked[username] = found
-        if found is None: # If user is not cracked
+        if found is None:  # If user is not cracked
             print(f"[{idx}/{total_users}] User '{username}' not cracked.", flush=True)
         else:
-            print(f"[{idx}/{total_users}] User '{username}' cracked.", flush=True) # If user is cracked
+            print(
+                f"[{idx}/{total_users}] User '{username}' cracked.", flush=True
+            )  # If user is cracked
 
     elapsed = time.time() - start_time
     num_cracked = sum(1 for v in cracked.values() if v is not None)
@@ -377,7 +395,7 @@ def simulate_crack(dictionary_file, users_file="data/sample_users.json"):
         f"Tried {attempted} candidate hashes across {total_users} users in {elapsed:.2f}s."
     )
     print(f"Cracked {num_cracked}/{total_users} users.")
-    for user, pwd in cracked.items(): # Printing cracked users
+    for user, pwd in cracked.items():  # Printing cracked users
         if pwd is None:
             print(f"{user}: NOT CRACKED")
         else:
@@ -385,16 +403,19 @@ def simulate_crack(dictionary_file, users_file="data/sample_users.json"):
 
     return cracked
 
+
 def encrypt_file(username, password, infile, outfile):
     print(f"Encrypting file: {infile}")
     print(f"Output file: {outfile}")
 
     # Derive encryption key from password using PBKDF2-HMAC-SHA256
     salt = get_random_bytes(16)  # 128-bit salt
-    key = PBKDF2(password, salt, dkLen=32, count=10**7, hmac_hash_module=SHA256) # 32 bytes = 256 bits
+    key = PBKDF2(
+        password, salt, dkLen=32, count=10**7, hmac_hash_module=SHA256
+    )  # 32 bytes = 256 bits
 
     # AES-GCM with a 96-bit nonce
-    nonce = get_random_bytes(12) # 12 bytes = 96 bits
+    nonce = get_random_bytes(12)  # 12 bytes = 96 bits
     cipher = AES.new(key, AES.MODE_GCM, nonce=nonce)
 
     # Use the username as AAD
@@ -405,7 +426,7 @@ def encrypt_file(username, password, infile, outfile):
         plaintext = f.read()
 
     ciphertext = cipher.encrypt(plaintext)
-    tag = cipher.digest() # Get the tag from the cipher
+    tag = cipher.digest()  # Get the tag from the cipher
 
     # File format: b"AES-GCM" | salt(16) | nonce(12) | tag(16) | ciphertext
     with open(outfile, "wb") as f:
@@ -416,6 +437,7 @@ def encrypt_file(username, password, infile, outfile):
         f.write(ciphertext)
 
     return
+
 
 def decrypt_file(username, password, infile, outfile):
     print(f"Decrypting file: {infile}")
@@ -450,15 +472,44 @@ def decrypt_file(username, password, infile, outfile):
     try:
         plaintext = cipher.decrypt_and_verify(ciphertext, tag)
     except ValueError:
-        print("Authentication failed. Wrong password, username (AAD), or corrupted data.")
+        print(
+            "Authentication failed. Wrong password, username (AAD), or corrupted data."
+        )
         return
 
     with open(outfile, "wb") as f:
         f.write(plaintext)
 
-    return
+
+def verify_user(username, password, users_file="data/sample_users.json"):
+    with open(users_file, "r") as f:
+        users = json.load(f)
+
+    if username not in users:
+        print(f"User '{username}' not found.")
+        return False
+
+    user_data = users[username]
+    hash = user_data["pwd_hash_hex"]
+    salt_hex = user_data["pwd_salt_hex"]
+    iterations = user_data["pwd_iterations"]
+
+    # Convert salt from hex to bytes
+    salt = bytes.fromhex(salt_hex)
+
+    # Derive key using the same parameters as stored
+    key = PBKDF2(password, salt, dkLen=32, count=iterations, hmac_hash_module=SHA256)
+
+    if key.hex().lower() == hash.lower():
+        print(f"User '{username}' verified.")
+        return True
+    else:
+        print(f"User '{username}' not verified.")
+        return False
+
+
 def main():
-    parser = create_parser()   
+    parser = create_parser()
     args = parser.parse_args()
 
     if args.command == "check-password":
@@ -476,6 +527,8 @@ def main():
         encrypt_file(args.username, args.password, args.infile, args.outfile)
     elif args.command == "decrypt-file":
         decrypt_file(args.username, args.password, args.infile, args.outfile)
+    elif args.command == "verify-user":
+        verify_user(args.username, args.password, args.users_file)
 
 
 if __name__ == "__main__":
