@@ -412,6 +412,8 @@ def simulate_crack(dictionary_file, users_file="data/sample_users.json"):
 def encrypt_file(username, password, infile, outfile):
     print(f"Encrypting file: {infile}")
     print(f"Output file: {outfile}")
+    
+    start_time = time.time()
 
     # Derive encryption key from password using PBKDF2-HMAC-SHA256
     salt = get_random_bytes(16)  # 128-bit salt
@@ -441,6 +443,11 @@ def encrypt_file(username, password, infile, outfile):
         f.write(tag)
         f.write(ciphertext)
 
+    end_time = time.time()
+    elapsed_time = end_time - start_time
+    print(f"Encryption completed in {elapsed_time:.3f} seconds.")
+    print(f"File size: {len(plaintext)} bytes -> {len(ciphertext) + 51} bytes (encrypted)")
+
     return
 
 
@@ -466,7 +473,7 @@ def decrypt_file(username, password, infile, outfile):
     ciphertext = raw_data[51:]
 
     # Derive key
-    key = PBKDF2(password, salt, dkLen=32, count=10**7, hmac_hash_module=SHA256)
+    key = PBKDF2(password, salt, dkLen=32, count=600_000, hmac_hash_module=SHA256)
 
     cipher = AES.new(key, AES.MODE_GCM, nonce=nonce)
 
