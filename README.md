@@ -20,6 +20,54 @@ You can install the required libraries using pip:
 ```bash
 pip install -r requirements.txt
 ```
+
+## Usage
+
+### Password Strength Check
+Check the strength of a password and get security suggestions:
+```bash
+python3 password_toolkit.py check-password -p "YourPassword123"
+```
+
+### User Management
+Create a new user with secure password hashing:
+```bash
+python3 password_toolkit.py create-user -u "username" -p "password"
+```
+
+Verify user credentials:
+```bash
+python3 password_toolkit.py verify-user -u "username" -p "password"
+```
+
+### Bloom Filter Operations
+Build a bloom filter from a password blacklist:
+```bash
+python3 password_toolkit.py build-bloom --blacklist data/100k-most-used-passwords-NCSC.txt --out data/bloom.bin
+```
+
+Check if a password exists in the bloom filter:
+```bash
+python3 password_toolkit.py check-bloom --bloom data/bloom.bin -p "password123"
+```
+
+### File Encryption/Decryption
+Encrypt a file with AES-GCM:
+```bash
+python3 password_toolkit.py encrypt-file -u "username" -p "password" --infile input.txt --outfile encrypted.bin
+```
+
+Decrypt a file:
+```bash
+python3 password_toolkit.py decrypt-file -u "username" -p "password" --infile encrypted.bin --outfile decrypted.txt
+```
+
+### Password Cracking Simulation
+Run a dictionary attack simulation:
+```bash
+python3 password_toolkit.py simulate-crack --dict data/password-wordlist.txt
+```
+
 ## Password Lists used
 
 

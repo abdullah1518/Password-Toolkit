@@ -149,9 +149,14 @@ def password_meter(password):
     if check_for_year(password):
         suggestion.append("Avoid using years in your password")
 
-    print(
-        f"Your password has {entropy:.3f} bits of entropy, your rating is: {rating}. Suggestions: {suggestion}"
-    )
+    print(f"Your password has {entropy:.3f} bits of entropy, your rating is: {rating}.")
+    
+    if suggestion:
+        print("Suggestions:")
+        for i, suggestion_item in enumerate(suggestion, 1):
+            print(f"  {i}. {suggestion_item}")
+    else:
+        print("No specific suggestions - your password looks good!")
 
 
 def check_simple_sequence(password, min_length=3):
